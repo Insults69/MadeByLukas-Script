@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MadeByLukas
 // @namespace    madebylukas
-// @version      1.0.7
+// @version      1.0.8
 // @description  Loader + Update UI
 // @match        https://*.tankionline.com/play/*
 // @match        https://*.tankionline.com/browser-public/*
