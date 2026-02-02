@@ -2,10 +2,12 @@
 // @name         MadeByLukas
 // @namespace    madebylukas
 // @version      1.0.1
-// @description  Loader + Update UI
-// @match       https://*.tankionline.com/play/
-// @match       https://*.tankionline.com/browser-public/*
+// @description  Loader + Update UI (cached)
+// @match        https://*.tankionline.com/play/
+// @match        https://*.tankionline.com/browser-public/*
 // @grant        GM_xmlhttpRequest
+// @grant        GM_getValue
+// @grant        GM_setValue
 // @connect      raw.githubusercontent.com
 // ==/UserScript==
 
@@ -15,7 +17,6 @@
   const MANIFEST =
     "https://raw.githubusercontent.com/Insults69/MadeByLukas-Script/main/manifest.json";
 
-  // Your Discord ID from your UI file (optional)
   const DISCORD_ID = "528556499614826526";
 
   const CURRENT_VERSION =
@@ -44,7 +45,7 @@
     }, 50);
   }
 
-  // ======= YOUR FULL MENU UI (wired) =======
+  // ======= YOUR FULL MENU UI (unchanged) =======
   function showUpdateMenu({ latestVersion, downloadUrl, changelog }) {
     waitForBody(() => {
       const style = document.createElement("style");
@@ -60,7 +61,6 @@
           z-index: 999999;
           animation: fadeIn .25s ease;
       }
-
       #lukas-updater {
           width: 420px;
           background: linear-gradient(180deg,#0b0b10,#06060a);
@@ -72,7 +72,6 @@
           font-family: Inter, system-ui, sans-serif;
           animation: scaleIn .3s ease;
       }
-
       .lukas-header {
           position: relative;
           text-align: center;
@@ -81,7 +80,6 @@
           opacity: .85;
           margin-bottom: 6px;
       }
-
       .lukas-close {
           position: absolute;
           right: 0;
@@ -92,20 +90,17 @@
           transition: .2s;
       }
       .lukas-close:hover { opacity: 1; }
-
       #lukas-updater h1 {
           margin: 18px 0;
           text-align: center;
           font-size: 20px;
           font-weight: 700;
       }
-
       .lukas-versions {
           display: flex;
           gap: 14px;
           margin-bottom: 16px;
       }
-
       .version-box {
           flex: 1;
           background: rgba(255,255,255,.04);
@@ -113,22 +108,18 @@
           padding: 14px;
           text-align: center;
       }
-
       .version-box span { font-size: 12px; opacity: .7; letter-spacing: 1px; }
       .version-box strong { font-size: 22px; display: block; margin-top: 6px; }
-
       .version-box.latest {
           border: 1px solid rgba(255,70,70,.6);
           box-shadow: 0 0 16px rgba(255,70,70,.35);
       }
-
       .lukas-changelog-title {
           font-size: 12px;
           opacity: .7;
           letter-spacing: 1px;
           margin-bottom: 8px;
       }
-
       .lukas-changelog-box {
           background: linear-gradient(180deg, rgba(255,255,255,.04), rgba(255,255,255,.02));
           border-radius: 12px;
@@ -137,13 +128,11 @@
           line-height: 1.6;
           box-shadow: inset 0 0 0 1px rgba(255,255,255,.05);
       }
-
       .lukas-changelog-item {
           display: flex;
           align-items: center;
           gap: 8px;
       }
-
       .lukas-dot {
           width: 6px;
           height: 6px;
@@ -151,13 +140,11 @@
           background: #ff3c3c;
           box-shadow: 0 0 6px rgba(255,60,60,.8);
       }
-
       .lukas-buttons {
           display: flex;
           gap: 12px;
           margin-top: 16px;
       }
-
       .lukas-btn {
           flex: 1;
           padding: 12px;
@@ -167,20 +154,16 @@
           font-weight: 600;
           transition: .2s;
       }
-
       .lukas-btn.discord {
           background: rgba(255,255,255,.08);
           color: white;
       }
-
       .lukas-btn.update {
           background: linear-gradient(135deg,#ff3c3c,#ff1f1f);
           color: white;
           box-shadow: 0 0 18px rgba(255,60,60,.5);
       }
-
       .lukas-btn:hover { transform: translateY(-1px); filter: brightness(1.1); }
-
       @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
       @keyframes scaleIn { from { transform: scale(.95); opacity: 0; } to { transform: scale(1); opacity: 1; } }
       `;
@@ -231,28 +214,39 @@
         setTimeout(() => window.open(webURL, "_blank"), 1200);
       };
 
-      // THIS is the important part: update button opens your .user.js raw link
       overlay.querySelector(".update").onclick = () => {
         window.open(downloadUrl, "_blank", "noopener,noreferrer");
       };
     });
   }
 
-  function httpGet(url, cb) {
-    GM_xmlhttpRequest({
-      method: "GET",
-      url,
-      onload: (r) => cb(null, r.responseText),
-      onerror: () => cb(new Error("network error"))
+  function httpGet(url) {
+    return new Promise((resolve, reject) => {
+      GM_xmlhttpRequest({
+        method: "GET",
+        url,
+        headers: { "Cache-Control": "no-cache" },
+        onload: (r) => (r.status >= 200 && r.status < 300) ? resolve(r.responseText) : reject(new Error("HTTP " + r.status)),
+        onerror: () => reject(new Error("network error"))
+      });
     });
   }
 
-  // ======= main =======
-  httpGet(MANIFEST + "?t=" + Date.now(), (err, txt) => {
-    if (err) return;
+  function runWhenReady(fn) {
+    // Running huge code at document-start can freeze + break globals.
+    if (document.readyState === "complete") return fn();
+    window.addEventListener("load", fn, { once: true });
+  }
 
+  // ======= main =======
+  (async () => {
     let data;
-    try { data = JSON.parse(txt); } catch { return; }
+    try {
+      data = JSON.parse(await httpGet(MANIFEST + "?t=" + Date.now()));
+    } catch (e) {
+      // If manifest fails, do nothing (no spam).
+      return;
+    }
 
     const latest = data.latest || "0.0.0";
 
@@ -265,11 +259,32 @@
       });
     }
 
-    // always load latest obfuscated code
-    if (data.payloadUrl) {
-      httpGet(data.payloadUrl + "?t=" + Date.now(), (e2, code) => {
-        if (!e2 && code) eval(code);
-      });
+    // ===== CACHING: download big payload only when version changes =====
+    if (!data.payloadUrl) return;
+
+    const CACHE_VER_KEY = "lukas_payload_version";
+    const CACHE_CODE_KEY = "lukas_payload_code";
+
+    let cachedVer = await GM_getValue(CACHE_VER_KEY, "");
+    let code = await GM_getValue(CACHE_CODE_KEY, "");
+
+    if (!code || cachedVer !== latest) {
+      try {
+        code = await httpGet(data.payloadUrl + "?t=" + Date.now());
+        await GM_setValue(CACHE_CODE_KEY, code);
+        await GM_setValue(CACHE_VER_KEY, latest);
+      } catch (e) {
+        return;
+      }
     }
-  });
+
+    // Run payload later (smoother + fewer "not defined" errors)
+    runWhenReady(() => {
+      try {
+        (0, eval)(code);
+      } catch (e) {
+        // Keep silent; optionally console.log(e)
+      }
+    });
+  })();
 })();
