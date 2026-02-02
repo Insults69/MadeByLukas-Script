@@ -1,6 +1,6 @@
 {
-  "latest": "1.0.7",
+  "latest": "1.0.8",
   "payloadUrl": "https://raw.githubusercontent.com/Insults69/MadeByLukas-Script/main/obfuscated.js",
   "downloadUrl": "https://raw.githubusercontent.com/Insults69/MadeByLukas-Script/main/MadeByLukas.user.js",
-  "changelog": ["First release"]
+  "changelog": ["Bug Fixes"]
 }
