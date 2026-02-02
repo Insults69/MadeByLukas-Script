@@ -1,14 +1,15 @@
 // ==UserScript==
 // @name         MadeByLukas
 // @namespace    madebylukas
-// @version      1.0.5
-// @description  Loader + Update UI (cached, compatible)
-// @match        https://*.tankionline.com/play/
+// @version      1.0.6
+// @description  Loader + Update UI (cached, fixed unsafeWindow)
+// @match        https://*.tankionline.com/play/*
 // @match        https://*.tankionline.com/browser-public/*
 // @run-at       document-start
 // @grant        GM_xmlhttpRequest
 // @grant        GM_getValue
 // @grant        GM_setValue
+// @grant        unsafeWindow
 // @connect      raw.githubusercontent.com
 // ==/UserScript==
 
@@ -49,7 +50,6 @@
     }, 20);
   }
 
-  // ======= UPDATE MENU UI (your full UI) =======
   function showUpdateMenu({ latestVersion, downloadUrl, changelog }) {
     waitForBody(() => {
       if (document.getElementById("lukas-updater-overlay")) return;
@@ -225,7 +225,6 @@
   }
 
   function runASAP(fn) {
-    // run early but stable
     if (document.readyState === "loading") {
       document.addEventListener("DOMContentLoaded", () => setTimeout(fn, 0), { once: true });
     } else {
@@ -259,6 +258,7 @@
       return;
     }
 
+    // Cache payload per manifest.latest
     const CACHE_VER_KEY = "lukas_payload_version";
     const CACHE_CODE_KEY = "lukas_payload_code";
 
@@ -280,9 +280,14 @@
       log("Using cached payload.");
     }
 
+    // Ensure unsafeWindow exists for payloads that expect it (VM needs grant; also shim just in case)
+    const shim = `
+      var unsafeWindow = (typeof unsafeWindow !== "undefined") ? unsafeWindow : window;
+    `;
+
     runASAP(() => {
       try {
-        (0, eval)(code);
+        (0, eval)(shim + "\n" + code);
         log("Payload executed.");
       } catch (e) {
         console.error("[MadeByLukas] Payload crashed:", e);
