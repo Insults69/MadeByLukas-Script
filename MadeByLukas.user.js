@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         MadeByLukas
 // @namespace    madebylukas
-// @version      1.0.8
-// @description  Loader + Update UI
+// @version      1.0.9
+// @description  Loader + Update UI (safe, cached, rollback, reduced error spam)
 // @match        https://*.tankionline.com/play/*
 // @match        https://*.tankionline.com/browser-public/*
 // @run-at       document-start
@@ -29,7 +29,7 @@
   const DEBUG = true;
   const log = (...a) => { if (DEBUG) console.log("[MadeByLukas]", ...a); };
 
-  // NEW: prevents running payload twice on SPA reloads
+  // prevents running payload twice on SPA reloads
   const RUN_ONCE_KEY = "__MADEBYLUKAS_PAYLOAD_RAN__";
 
   function semverGt(a, b) {
@@ -289,29 +289,40 @@
       var unsafeWindow = (typeof unsafeWindow !== "undefined") ? unsafeWindow : window;
     `;
 
-    // NEW: prevent double-run + log payload crash only once
-    let crashLogged = false;
-
     runASAP(() => {
-      try {
-        // Run once protection
-        const uw = (typeof unsafeWindow !== "undefined") ? unsafeWindow : window;
-        if (uw[RUN_ONCE_KEY]) return;
-        uw[RUN_ONCE_KEY] = true;
+      // Run-once protection
+      const uw = (typeof unsafeWindow !== "undefined") ? unsafeWindow : window;
+      if (uw[RUN_ONCE_KEY]) return;
+      uw[RUN_ONCE_KEY] = true;
 
+      // SAFE: reduce error spam without changing payload behavior
+      let firstVmErrorLogged = false;
+      const prevOnError = window.onerror;
+
+      window.onerror = function (msg, src, line, col, err) {
+        // Only intercept "VMxxx" errors created by eval scripts to prevent endless spam/lag.
+        // We log the first one so you still know something is wrong.
+        if (String(src || "").startsWith("VM")) {
+          if (!firstVmErrorLogged) {
+            firstVmErrorLogged = true;
+            console.error("[MadeByLukas] Payload runtime error:", msg, "at", src + ":" + line + ":" + col, err || "");
+          }
+          return true; // stop console spam from repeating VM errors
+        }
+        return prevOnError ? prevOnError.apply(this, arguments) : false;
+      };
+
+      try {
         (0, eval)(shim + "\n" + code);
         log("Payload executed.");
 
-        // NEW: save last known good payload (only after a successful eval)
+        // Save last-known-good payload
         GM_setValue(LAST_GOOD_CODE_KEY, code);
         GM_setValue(LAST_GOOD_VER_KEY, latest);
       } catch (e) {
-        if (!crashLogged) {
-          crashLogged = true;
-          console.error("[MadeByLukas] Payload crashed:", e);
-        }
+        console.error("[MadeByLukas] Payload crashed:", e);
 
-        // NEW: rollback to last known good payload if available
+        // Rollback to last known good payload if available
         try {
           const old = GM_getValue(LAST_GOOD_CODE_KEY, "");
           const oldVer = GM_getValue(LAST_GOOD_VER_KEY, "");
