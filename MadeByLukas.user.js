@@ -3,7 +3,8 @@
 // @namespace    madebylukas
 // @version      1.0.0
 // @description  Loader + Update UI
-// @match        *://*/*
+// @match       https://*.tankionline.com/play/
+// @match       https://*.tankionline.com/browser-public/*
 // @grant        GM_xmlhttpRequest
 // @connect      raw.githubusercontent.com
 // ==/UserScript==
