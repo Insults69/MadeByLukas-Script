@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         MadeByLukas
 // @namespace    madebylukas
-// @version      1.0.4
-// @description  Loader + Update UI (cached + page-context injection)
+// @version      1.0.5
+// @description  Loader + Update UI (cached, compatible)
 // @match        https://*.tankionline.com/play/
 // @match        https://*.tankionline.com/browser-public/*
 // @run-at       document-start
@@ -25,7 +25,6 @@
       ? GM_info.script.version
       : "0.0.0";
 
-  // Turn this on temporarily if you need debugging
   const DEBUG = true;
   const log = (...a) => { if (DEBUG) console.log("[MadeByLukas]", ...a); };
 
@@ -50,7 +49,7 @@
     }, 20);
   }
 
-  // ======= YOUR MENU UI (same look/logic, unchanged behavior) =======
+  // ======= UPDATE MENU UI (your full UI) =======
   function showUpdateMenu({ latestVersion, downloadUrl, changelog }) {
     waitForBody(() => {
       if (document.getElementById("lukas-updater-overlay")) return;
@@ -58,10 +57,13 @@
       const style = document.createElement("style");
       style.textContent = `
       #lukas-updater-overlay {
-          position: fixed; inset: 0;
+          position: fixed;
+          inset: 0;
           background: rgba(0,0,0,.6);
           backdrop-filter: blur(6px);
-          display: flex; align-items: center; justify-content: center;
+          display: flex;
+          align-items: center;
+          justify-content: center;
           z-index: 999999;
           animation: fadeIn .25s ease;
       }
@@ -216,31 +218,33 @@
         headers: { "Cache-Control": "no-cache" },
         onload: (r) => (r.status >= 200 && r.status < 300)
           ? resolve(r.responseText)
-          : reject(new Error("HTTP " + r.status)),
-        onerror: () => reject(new Error("network error"))
+          : reject(new Error("HTTP " + r.status + " " + url)),
+        onerror: () => reject(new Error("network error " + url))
       });
     });
   }
 
-  // Run the payload in PAGE context (fixes many “works pasted but not via loader” issues)
-  function injectIntoPage(code) {
-    const s = document.createElement("script");
-    s.type = "text/javascript";
-    s.textContent = code;
-    (document.head || document.documentElement).appendChild(s);
-    s.remove();
+  function runASAP(fn) {
+    // run early but stable
+    if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", () => setTimeout(fn, 0), { once: true });
+    } else {
+      setTimeout(fn, 0);
+    }
   }
 
   (async () => {
     let data;
     try {
+      log("Fetching manifest…");
       data = JSON.parse(await httpGet(MANIFEST + "?t=" + Date.now()));
     } catch (e) {
-      log("Manifest fetch/parse failed:", e);
+      console.error("[MadeByLukas] Manifest failed:", e);
       return;
     }
 
     const latest = data.latest || "0.0.0";
+    log("Manifest latest:", latest);
 
     if (semverGt(latest, CURRENT_VERSION)) {
       showUpdateMenu({
@@ -251,11 +255,10 @@
     }
 
     if (!data.payloadUrl) {
-      log("manifest.payloadUrl missing");
+      console.error("[MadeByLukas] manifest.payloadUrl missing");
       return;
     }
 
-    // Cache payload per manifest.latest (fast reloads, less lag)
     const CACHE_VER_KEY = "lukas_payload_version";
     const CACHE_CODE_KEY = "lukas_payload_code";
 
@@ -264,24 +267,25 @@
 
     if (!code || cachedVer !== latest) {
       try {
-        log("Downloading payload...");
+        log("Downloading payload…");
         code = await httpGet(data.payloadUrl + "?t=" + Date.now());
         await GM_setValue(CACHE_CODE_KEY, code);
         await GM_setValue(CACHE_VER_KEY, latest);
+        log("Payload cached.");
       } catch (e) {
-        log("Payload download failed:", e);
+        console.error("[MadeByLukas] Payload download failed:", e);
         return;
       }
     } else {
-      log("Using cached payload");
+      log("Using cached payload.");
     }
 
-    // Run ASAP, but not in the same call stack (more stable)
-    Promise.resolve().then(() => {
+    runASAP(() => {
       try {
-        injectIntoPage(code);
+        (0, eval)(code);
+        log("Payload executed.");
       } catch (e) {
-        console.error("[MadeByLukas] payload crashed:", e);
+        console.error("[MadeByLukas] Payload crashed:", e);
       }
     });
   })();
